@@ -186,3 +186,17 @@ def list_books(
     if search:
         params["search"] = search
     return api_request(f"/v1/books/?{urllib.parse.urlencode(params)}")
+
+
+def get_chapter_metadata(book_id: str) -> dict[str, Any]:
+    return api_request(f"/v1/books/{urllib.parse.quote(book_id)}/chapter-metadata")
+
+
+def get_chapters_text(book_id: str, indices: list[int]) -> dict[str, Any]:
+    payload = json.dumps({"indices": indices}).encode("utf-8")
+    return api_request(
+        f"/v1/books/{urllib.parse.quote(book_id)}/chapters-text",
+        method="POST",
+        body=payload,
+        headers={"Content-Type": "application/json"},
+    )

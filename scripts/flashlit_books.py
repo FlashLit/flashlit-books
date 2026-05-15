@@ -7,7 +7,7 @@ import argparse
 import json
 import sys
 
-from flashlit_client import FlashlitError, list_books
+from flashlit_client import FlashlitError, get_chapter_metadata, get_chapters_text, list_books
 
 
 def print_table(result: dict, show_ids: bool = False) -> None:
@@ -58,6 +58,38 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_chapter_metadata(args: argparse.Namespace) -> int:
+    result = get_chapter_metadata(args.book_id)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
+
+def cmd_chapters_text(args: argparse.Namespace) -> int:
+    result = get_chapters_text(args.book_id, args.indices)
+    if args.json:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return 0
+
+    chapter_texts = result.get("chapter_texts", {})
+    missing = result.get("missing_chapters", [])
+    for index in args.indices:
+        text = chapter_texts.get(str(index)) or chapter_texts.get(index)
+        if text is None:
+            print(f"--- Chapter {index}: missing ---")
+            continue
+        if args.first_paragraph:
+            paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
+            text = paragraphs[0] if paragraphs else ""
+        elif args.max_chars and len(text) > args.max_chars:
+            text = text[: args.max_chars].rstrip() + "…"
+        print(f"--- Chapter {index} ---")
+        print(text)
+        print()
+    if missing:
+        print(f"Missing chapters: {missing}", file=sys.stderr)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="List Flashlit books")
     sub = parser.add_subparsers(dest="command")
@@ -72,6 +104,18 @@ def main() -> int:
     list_parser.add_argument("--ids", action="store_true", help="Show book IDs and EPUB URLs")
     list_parser.add_argument("--json", action="store_true", help="Print raw JSON response")
     list_parser.set_defaults(func=cmd_list)
+
+    metadata_parser = sub.add_parser("chapter-metadata", help="Fetch processed chapter metadata for a book")
+    metadata_parser.add_argument("book_id", help="Book md5_value / ID")
+    metadata_parser.set_defaults(func=cmd_chapter_metadata)
+
+    text_parser = sub.add_parser("chapters-text", help="Fetch raw combined text for one or more chapter indices")
+    text_parser.add_argument("book_id", help="Book md5_value / ID")
+    text_parser.add_argument("indices", nargs="+", type=int, help="Chapter indices to fetch")
+    text_parser.add_argument("--first-paragraph", action="store_true", help="Print only the first non-empty paragraph per chapter")
+    text_parser.add_argument("--max-chars", type=int, default=0, help="Truncate each chapter to this many characters")
+    text_parser.add_argument("--json", action="store_true", help="Print raw JSON response")
+    text_parser.set_defaults(func=cmd_chapters_text)
 
     # Default to `list` if no subcommand is provided.
     argv = sys.argv[1:]

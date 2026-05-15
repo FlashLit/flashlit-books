@@ -1,11 +1,11 @@
 ---
 name: flashlit-books
-description: Authenticate to Flashlit via Auth0 PKCE and list the authenticated user's Flashlit books. Use when the user asks to log in to Flashlit, verify Flashlit auth, list Flashlit library books, or inspect available Flashlit book records.
+description: Authenticate to Flashlit via Auth0 PKCE, list the authenticated user's Flashlit books, and pull raw chapter text from imported books. Use when the user asks to log in to Flashlit, verify Flashlit auth, list Flashlit library books, inspect available Flashlit book records, or extract text from a Flashlit book chapter.
 ---
 
 # Flashlit Books
 
-Use this skill to authenticate to Flashlit and list books in the authenticated user's library.
+Use this skill to authenticate to Flashlit, list books in the authenticated user's library, and pull raw text from processed book chapters.
 
 ## Safety and privacy
 
@@ -81,6 +81,31 @@ python3 scripts/flashlit_books.py list --json --limit 5
 python3 scripts/flashlit_books.py list --not-imported --limit 10
 ```
 
+### Pull chapter text
+
+First find a book ID with `--ids`:
+
+```bash
+python3 scripts/flashlit_books.py list --search "The Secret History" --ids
+```
+
+Then fetch one or more chapter indices:
+
+```bash
+python3 scripts/flashlit_books.py chapters-text <book_id> 12
+python3 scripts/flashlit_books.py chapters-text <book_id> 12 --first-paragraph
+python3 scripts/flashlit_books.py chapters-text <book_id> 10 12 13 --max-chars 1000
+python3 scripts/flashlit_books.py chapters-text <book_id> 12 --json
+```
+
+Chapter text is pulled from `POST /v1/books/{book_id}/chapters-text` with payload `{ "indices": [...] }`. Prefer this batch endpoint: the single-chapter endpoint may return 404 even when the batch endpoint works.
+
+### Pull chapter metadata
+
+```bash
+python3 scripts/flashlit_books.py chapter-metadata <book_id>
+```
+
 ### Logout
 
 ```bash
@@ -97,6 +122,7 @@ When the user asks to list Flashlit books:
 2. If not authenticated, run `flashlit_auth.py login` or ask the user to run it if browser interaction is required.
 3. Run `flashlit_books.py list` with the requested filters/limit.
 4. Summarize the returned book titles, authors, activation state, and processing state.
+5. If the user asks for text from a book, find the book ID, determine the relevant chapter index, then run `flashlit_books.py chapters-text <book_id> <index>` (use `--first-paragraph` when requested).
 
 ## Endpoint details
 
@@ -124,5 +150,26 @@ The API returns paginated data:
     "total_count": 119,
     "page_size": 10
   }
+}
+```
+
+Raw chapter text is fetched with:
+
+```http
+POST /v1/books/{book_id}/chapters-text
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{"indices": [12]}
+```
+
+The API returns:
+
+```json
+{
+  "chapter_texts": {
+    "12": "Full chapter text..."
+  },
+  "missing_chapters": []
 }
 ```
