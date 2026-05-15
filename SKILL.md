@@ -83,13 +83,23 @@ python3 scripts/flashlit_books.py list --not-imported --limit 10
 
 ### Pull chapter text
 
-First find a book ID with `--ids`:
+**Always use the Flashlit skill scripts first; do not download/parse the EPUB unless the API fails.**
+
+1. Find the book ID and the processed chapter range:
 
 ```bash
-python3 scripts/flashlit_books.py list --search "The Secret History" --ids
+python3 scripts/flashlit_books.py list --search "The Secret History" --ids --json
 ```
 
-Then fetch one or more chapter indices:
+In the JSON response, use:
+
+- `md5_value` as `<book_id>`
+- `startChapterIndex` as the first processable chapter index
+- `endChapterIndex` as the last processable chapter index
+- `startChapterHref` / `endChapterHref` as hints about whether the range starts at an epigraph, preface, or chapter file
+- `chapters_processed` / `total_chapters` to confirm processing completed
+
+2. Fetch chapter text by numeric chapter index:
 
 ```bash
 python3 scripts/flashlit_books.py chapters-text <book_id> 12
@@ -100,11 +110,26 @@ python3 scripts/flashlit_books.py chapters-text <book_id> 12 --json
 
 Chapter text is pulled from `POST /v1/books/{book_id}/chapters-text` with payload `{ "indices": [...] }`. Prefer this batch endpoint: the single-chapter endpoint may return 404 even when the batch endpoint works.
 
+### Select the right chapter range
+
+Use the book record's configured range, not the full chapter-metadata index list, when choosing chapters to read:
+
+1. Run `list --search "<title>" --ids --json`.
+2. Read `startChapterIndex` and `endChapterIndex` from the matching book.
+3. Try `chapters-text <book_id> <startChapterIndex>` first.
+4. If that chapter is an epigraph, dedication, title page, copyright page, table of contents, or other front matter, increment the index by 1 and try again.
+5. Continue until you find the first substantial chapter text.
+6. Do not request indices outside `startChapterIndex..endChapterIndex` unless the user explicitly asks for front/back matter; they may return 404 or irrelevant text.
+
+Example: if a book record says `startChapterIndex: 6`, `startChapterHref: "OEBPS/xhtml/epigraph.xhtml"`, `endChapterIndex: 14`, then index `6` is likely an epigraph and index `7` is likely the first main chapter.
+
 ### Pull chapter metadata
 
 ```bash
 python3 scripts/flashlit_books.py chapter-metadata <book_id>
 ```
+
+`chapter-metadata` can show all EPUB chapter indices and hashes, but it may include front matter, back matter, images, notes, and other non-readable sections. It does **not** replace the configured `startChapterIndex..endChapterIndex` range from the book list record.
 
 ### Logout
 
@@ -122,7 +147,16 @@ When the user asks to list Flashlit books:
 2. If not authenticated, run `flashlit_auth.py login` or ask the user to run it if browser interaction is required.
 3. Run `flashlit_books.py list` with the requested filters/limit.
 4. Summarize the returned book titles, authors, activation state, and processing state.
-5. If the user asks for text from a book, find the book ID, determine the relevant chapter index, then run `flashlit_books.py chapters-text <book_id> <index>` (use `--first-paragraph` when requested).
+
+When the user asks to read or inspect chapter text:
+
+1. Run `flashlit_auth.py status`.
+2. Find the book with `flashlit_books.py list --search "<title>" --ids --json`.
+3. From the matching book record, copy `md5_value`, `startChapterIndex`, and `endChapterIndex`.
+4. Start with `startChapterIndex` and run `flashlit_books.py chapters-text <md5_value> <index>`.
+5. If the returned text is front matter or not substantial, increment the index and retry until the first real chapter is found, staying within `startChapterIndex..endChapterIndex`.
+6. For long chapters, use `--max-chars <n>` for a preview or `--json` when structured output is needed.
+7. If the API returns 404 for an index inside the configured range, try the next index in range. Only fall back to EPUB download/parsing after the Flashlit API fails for the relevant range.
 
 ## Endpoint details
 
